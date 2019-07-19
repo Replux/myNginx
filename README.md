@@ -32,7 +32,7 @@
                                 + ngx_epoll_add_event((*pos)->fd....);
                                     + epoll_ctl(m_epollhandle,eventtype,fd,&ev);
                         + ngx_setproctitle(pprocname);         //重新为子进程设置标题为worker process
-			+ for(;;)
+                        + for(;;)
                             + ngx_process_events_and_timers(); //处理网络事件和定时器事件 
                                 + g_socket.ngx_epoll_process_events(-1); //-1表示无限时等待
                                     + epoll_wait();

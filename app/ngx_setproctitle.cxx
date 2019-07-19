@@ -36,7 +36,7 @@ void ngx_setproctitle(const char *title)
     if( esy <= titleLength)
         return; //不设置了
 
-    //(3)设置后续的命令行参数为空，表示只有argv[]中只有一个元素了，这是好习惯；防止后续argv被滥用，因为很多判断是用argv[] == NULL来做结束标记判断的;
+    //(3)设置后续的命令行参数为空，因为很多判断是用argv[] == NULL来做结束标记判断的;
     g_argv[1] = NULL;  
 
     //(4)把标题弄进来，注意原来的命令行参数都会被覆盖掉，不要再使用这些命令行参数,而且g_argv[1]已经被设置为NULL了

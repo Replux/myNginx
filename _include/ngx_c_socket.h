@@ -31,8 +31,8 @@ struct ngx_listening_s  //和监听端口有关的结构
 	lpngx_connection_t     connection;  //连接池中的一个连接，注意这是个指针 
 };
 
-//以下三个结构是非常重要的三个结构，参考官方nginx的写法；
-//(1)该结构表示一个TCP连接【客户端主动发起的、Nginx服务器被动接受的TCP连接】
+//以下是非常重要的三个结构，参考官方nginx的写法；
+//(1)该结构表示一个TCP连接，即由客户端主动发起而服务器被动接受的TCP连接,每个TCP连接对应一个数据结构
 struct ngx_connection_s
 {		
 	ngx_connection_s();                                      //构造函数
@@ -82,11 +82,11 @@ struct ngx_connection_s
 	lpngx_connection_t     next;                           //这是个指针，指向下一个本类型对象，用于把空闲的连接池对象串起来构成一个单向链表，方便取用
 };
 
-//消息头，引入的目的是当收到数据包时，额外记录一些内容以备将来使用
+//消息头，当服务器收到数据时在包头前添加。添加的目的是当收到数据包时，额外记录一些内容以备将来使用
 typedef struct _STRUC_MSG_HEADER
 {
-	lpngx_connection_t pConn;         //记录对应的链接(注意这是一个指针)
-	uint64_t           iCurrsequence; //收到数据包时记录次数对应连接的iCurrsequence值，将来能用于比较连接是否过期	
+	lpngx_connection_t pConn;         //记录对应的连接(注意这是一个指针)
+	uint64_t           iCurrsequence; //收到数据包时记录次数对应连接的iCurrsequence值，将来能用于判断连接是否过期	
 }STRUC_MSG_HEADER,*LPSTRUC_MSG_HEADER;
 
 

@@ -26,7 +26,7 @@ void CSocket::AddToTimerQueue(lpngx_connection_t pConn)
     CMemory *p_memory = CMemory::GetInstance();
 
     time_t futtime = time(NULL);
-    futtime += m_iWaitTime;  //20秒之后的时间
+    futtime += m_iWaitTime;
 
     CLock lock(&m_timequeueMutex); //互斥，因为要操作m_timeQueuemap了
     LPSTRUC_MSG_HEADER tmpMsgHeader = (LPSTRUC_MSG_HEADER)p_memory->AllocMemory(sizeof(STRUC_MSG_HEADER),false);
@@ -70,15 +70,14 @@ LPSTRUC_MSG_HEADER CSocket::GetOverTimeTimer(time_t cur_time)
 	LPSTRUC_MSG_HEADER ptmp;
 
 	if (m_cur_size_ == 0 || m_timerQueuemap.empty())
-		return NULL; //队列为空
+		return NULL;
 
 	time_t earliesttime = GetEarliestTime(); //到multimap中去查询
 	if (earliesttime <= cur_time)
 	{
-		//这回确实是有到时间的了【超时的节点】
-		ptmp = RemoveFirstTimer();    //把这个超时的节点从 m_timerQueuemap 删掉，并把这个节点的第二项返回来；
+		ptmp = RemoveFirstTimer();  //把这个超时的节点从 m_timerQueuemap 删掉，并把这个节点的第二项返回来；
 
-		if(m_ifTimeOutKick != 1)
+		if(m_ifTimeOutKick != 1) //m_ifTimeOutKick == 1 意味无需心跳检测，而是到时踢出，那也就没必要再将其加入到时间队列中了
 		{       
 			time_t newinqueutime = cur_time+(m_iWaitTime);
 			LPSTRUC_MSG_HEADER tmpMsgHeader = (LPSTRUC_MSG_HEADER)p_memory->AllocMemory(sizeof(STRUC_MSG_HEADER),false);
@@ -118,10 +117,10 @@ lblMTQM:
 			goto lblMTQM;
 		}		
 	}
+
 	if(m_cur_size_ > 0)
-	{
 		m_earliestTime = GetEarliestTime();
-	}
+		
     return;    
 }
 
@@ -141,7 +140,7 @@ void CSocket::clearAllFromTimerQueue()
 	m_timerQueuemap.clear();
 }
 
-//时间队列监视和处理线程，处理到期不发心跳包的用户踢出的线程
+//时间队列监视和处理线程，将到期不发心跳包的用户踢出的线程
 void* CSocket::ServerTimerQueueMonitorThread(void* threadData)
 {
     ThreadItem *pThread = static_cast<ThreadItem*>(threadData);
@@ -162,13 +161,15 @@ void* CSocket::ServerTimerQueueMonitorThread(void* threadData)
 
                 err = pthread_mutex_lock(&pSocketObj->m_timequeueMutex);  
                 if(err != 0) ngx_log_stderr(err,"CSocket::ServerTimerQueueMonitorThread()中pthread_mutex_lock()失败，返回的错误码为%d!",err);//有问题，要及时报告
-                while ((result = pSocketObj->GetOverTimeTimer(cur_time)) != NULL) //一次性的把所有超时节点都拿过来
+                //取出超时连接
+				while ((result = pSocketObj->GetOverTimeTimer(cur_time)) != NULL)
 				{
 					m_lsIdleList.push_back(result); 
 				}
                 err = pthread_mutex_unlock(&pSocketObj->m_timequeueMutex); 
                 if(err != 0)  ngx_log_stderr(err,"CSocket::ServerTimerQueueMonitorThread()pthread_mutex_unlock()失败，返回的错误码为%d!",err);//有问题，要及时报告                
                 LPSTRUC_MSG_HEADER tmpmsg;
+				//处理超时连接
                 while(!m_lsIdleList.empty())
                 {
                     tmpmsg = m_lsIdleList.front();

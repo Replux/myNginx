@@ -24,48 +24,43 @@
 #include "ngx_c_memory.h"
 #include "ngx_c_lockmutex.h"  //自动释放互斥量的一个类
 
-//来数据时候的处理，当连接上有数据来的时候，本函数会被ngx_epoll_process_events()所调用  ,官方的类似函数为ngx_http_wait_request_handler();
+//当连接上传入数据时候的时候，本函数会被ngx_epoll_process_events()所调用
 void CSocket::ngx_read_request_handler(lpngx_connection_t pConn)
 {  
-    bool isflood = false; //是否flood攻击；
+    bool isflood = false;
 
     ssize_t reco = recvproc(pConn,pConn->precvbuf,pConn->irecvlen); 
-    if(reco <= 0)  
-    {
-        return;//该处理的上边这个recvproc()函数处理过了，这里<=0是直接return        
-    }
+    if(reco <= 0)
+        return;
 
-    //走到这里，说明成功收到了一些字节（>0），就要开始判断收到了多少数据了     
-    if(pConn->curStat == _PKG_HD_INIT) //连接建立起来时肯定是这个状态，因为在ngx_get_connection()中已经把curStat成员赋值成_PKG_HD_INIT了
+    if(pConn->curStat == _PKG_HD_INIT) //ngx_get_connection()在初始化连接时以将连接赋为_PKG_HD_INIT
     {        
-        if(reco == sizeof(COMM_PKG_HEADER))//正好收到完整包头，这里拆解包头
+        if(reco == sizeof(COMM_PKG_HEADER)) //收到完整包头，这里拆解包头
         {   
-            MessageHandler_p1(pConn,isflood); //那就调用专门针对包头处理完整的函数去处理把。
+            MessageHandler_p1(pConn,isflood); 
         }
-        else
+        else  //包头未接收完整
 		{
-			pConn->curStat        = _PKG_HD_RECVING;                 //接收包头中，包头不完整，继续接收包头中	
-            pConn->precvbuf       = pConn->precvbuf + reco;              //注意收后续包的内存往后走
-            pConn->irecvlen       = pConn->irecvlen - reco;              //要收的内容当然要减少，以确保只收到完整的包头先
+			pConn->curStat   = _PKG_HD_RECVING;
+            pConn->precvbuf  = pConn->precvbuf + reco;
+            pConn->irecvlen  = pConn->irecvlen - reco;
         }
     } 
-    else if(pConn->curStat == _PKG_HD_RECVING) //接收包头中，包头不完整，继续接收中，这个条件才会成立
+    else if(pConn->curStat == _PKG_HD_RECVING) //包头未接收完整，则继续接收
     {
         if(pConn->irecvlen == reco) 
         {
             MessageHandler_p1(pConn,isflood); 
         }
-        else
+        else //包头还是没收完整，继续收包头
 		{
-			//包头还是没收完整，继续收包头
-            //pConn->curStat        = _PKG_HD_RECVING;                 //没必要
-            pConn->precvbuf       = pConn->precvbuf + reco;              //注意收后续包的内存往后走
-            pConn->irecvlen       = pConn->irecvlen - reco;              //要收的内容当然要减少，以确保只收到完整的包头先
+            pConn->precvbuf  = pConn->precvbuf + reco;
+            pConn->irecvlen  = pConn->irecvlen - reco;
         }
     }
     else if(pConn->curStat == _PKG_BD_INIT)  //包头刚好收完，准备接收包体
     {
-        if(reco == pConn->irecvlen) //收到的宽度等于要收的宽度，包体也收完整了
+        if(reco == pConn->irecvlen)
         {
             if(m_floodAkEnable == 1) 
             {
@@ -73,17 +68,16 @@ void CSocket::ngx_read_request_handler(lpngx_connection_t pConn)
             }
             MessageHandler_p2(pConn,isflood);
         }
-        else
+        else  //包体没收完整
 		{
-			//收到的宽度小于要收的宽度
 			pConn->curStat = _PKG_BD_RECVING;					
 			pConn->precvbuf = pConn->precvbuf + reco;
 			pConn->irecvlen = pConn->irecvlen - reco;
 		}
     }
-    else if(pConn->curStat == _PKG_BD_RECVING)  //接收包体中，包体不完整，继续接收中
+    else if(pConn->curStat == _PKG_BD_RECVING)  //包体没收完整，则继续接收
     {
-        if(pConn->irecvlen == reco) //包体收完整了
+        if(pConn->irecvlen == reco)
         {
             if(m_floodAkEnable == 1) 
             {
@@ -91,19 +85,15 @@ void CSocket::ngx_read_request_handler(lpngx_connection_t pConn)
             }
             MessageHandler_p2(pConn,isflood);
         }
-        else
+        else //包体还是没收完整，继续收
         {
-            //包体没收完整，继续收
             pConn->precvbuf = pConn->precvbuf + reco;
 			pConn->irecvlen = pConn->irecvlen - reco;
         }
-    }  //end if(c->curStat == _PKG_HD_INIT)
+    }
 
     if(isflood == true)
-    {
-        //客户端flood服务器，则直接把客户端踢掉
         zdClosesocketProc(pConn);
-    }
 
     return;
 }
@@ -119,100 +109,85 @@ ssize_t CSocket::recvproc(lpngx_connection_t pConn,char *buff,ssize_t buflen)  /
     ssize_t n;
     
     n = recv(pConn->fd, buff, buflen, 0); //recv()系统函数， 最后一个参数flag，一般为0；     
-    if(n == 0)
+    if(n == 0) //客户端close()断连
     {
         zdClosesocketProc(pConn);        
         return -1;
     }
-    //客户端没断，走这里 
-    if(n < 0) //这被认为有错误发生
+
+    if(n < 0) //说明有错误发生
     {
-        //EAGAIN和EWOULDBLOCK[【这个应该常用在hp上】应该是一样的值，表示没收到数据，一般来讲，在ET模式下会出现这个错误，因为ET模式下是不停的recv肯定有一个时刻收到这个errno，但LT模式下一般是来事件才收，所以不该出现这个返回值
         if(errno == EAGAIN || errno == EWOULDBLOCK)
         {
             ngx_log_stderr(errno,"CSocket::recvproc()中errno == EAGAIN || errno == EWOULDBLOCK成立，出乎意料！");//epoll为LT模式不应该出现这个返回值，所以直接打印出来瞧瞧
-            return -1; //不当做错误处理，只是简单返回
+            return -1;
         }
-        //EINTR错误的产生：当阻塞于某个慢系统调用的一个进程捕获某个信号且相应信号处理函数返回时，该系统调用可能返回一个EINTR错误。
-        //例如：在socket服务器端，设置了信号捕获机制，有子进程，当在父进程阻塞于慢系统调用时由父进程捕获到了一个有效信号时，内核会致使accept返回一个EINTR错误(被中断的系统调用)。
         if(errno == EINTR) 
         {
             ngx_log_stderr(errno,"CSocket::recvproc()中errno == EINTR成立，出乎意料！");//epoll为LT模式不应该出现这个返回值，所以直接打印出来瞧瞧
-            return -1; //不当做错误处理，只是简单返回
+            return -1;
         }
 
-        //errno参考：http://dhfapiran1.360drm.com        
-        if(errno == ECONNRESET)  //#define ECONNRESET 104 /* Connection reset by peer */
+        if(errno == ECONNRESET)  //客户端发送RST，粗暴断连
         {
-            
+            // ...待扩展
         }
+        else if(errno == EBADF)  // Bad file descriptor，并发环境下，socket可能会被干掉
+        {
+            // ...待扩展
+        } 
         else
         {
-            if(errno == EBADF)  // #define EBADF   9 /* Bad file descriptor */
-            {
-                //因为多线程，偶尔会干掉socket，所以不排除产生这个错误的可能性
-            }
-            else
-            {
-                ngx_log_stderr(errno,"CSocket::recvproc()中发生错误");
-            }
-        } 
-        
+            ngx_log_stderr(errno,"CSocket::recvproc()中发生错误");
+        }
+
         zdClosesocketProc(pConn);
         return -1;
     }
 
     //能走到这里的，就认为收到了有效数据
+
     return n; //返回收到的字节数
 }
 
 
 //消息收完整后的处理，称为消息处理阶段1【p1】
-//注意参数isflood是个引用
 void CSocket::MessageHandler_p1(lpngx_connection_t pConn,bool &isflood)
 {    
     CMemory *p_memory = CMemory::GetInstance();		
 
     LPCOMM_PKG_HEADER pPkgHeader;
-    pPkgHeader = (LPCOMM_PKG_HEADER)pConn->dataHeadInfo; //正好收到包头时，包头信息肯定是在dataHeadInfo里；
+    pPkgHeader = (LPCOMM_PKG_HEADER)pConn->dataHeadInfo;
 
     unsigned short e_pkgLen; 
     e_pkgLen = ntohs(pPkgHeader->pkgLen);
-    //恶意包或者错误包的判断
-    if(e_pkgLen < sizeof(COMM_PKG_HEADER)) 
+    
+    if(e_pkgLen < sizeof(COMM_PKG_HEADER))  //报文总长度 < 包头长度，认定非法包，状态和接收位置都复原
     {
-        //伪造包/或者包错误，否则整个包长怎么可能比包头还小？（整个包长是包头+包体，就算包体为0字节，那么至少e_pkgLen == sizeof(COMM_PKG_HEADER)）
-        //报文总长度 < 包头长度，认定非法用户，废包
-        //状态和接收位置都复原，这些值都有必要，因为有可能在其他状态比如_PKG_HD_RECVING状态调用这个函数；
         pConn->curStat = _PKG_HD_INIT;      
         pConn->precvbuf = pConn->dataHeadInfo;
         pConn->irecvlen = sizeof(COMM_PKG_HEADER);
     }
-    else if(e_pkgLen > (PKG_MAX_LENGTH-1000))   //客户端发来包居然说包长度 > 29000?肯定是恶意包
+    else if(e_pkgLen > (PKG_MAX_LENGTH-1000))   //包的总长度大于限制则判定为恶意包，状态和接收位置都复原
     {
-        //恶意包，太大，认定非法用户，废包【包头中说这个包总长度这么大，这不行】
-        //状态和接收位置都复原，这些值都有必要，因为有可能在其他状态比如_PKG_HD_RECVING状态调用这个函数；
         pConn->curStat = _PKG_HD_INIT;
         pConn->precvbuf = pConn->dataHeadInfo;
         pConn->irecvlen = sizeof(COMM_PKG_HEADER);
     }
-    else
+    else //合法的包头，继续处理
     {
-        //合法的包头，继续处理
         char *pTmpBuffer  = (char *)p_memory->AllocMemory(sizeof(STRUC_MSG_HEADER) + e_pkgLen,false); //分配内存【长度是 消息头+包头+包体】       
         pConn->precvMemPointer = pTmpBuffer;  //指向接收数据的首地址
 
         //a)先填写消息头内容
         LPSTRUC_MSG_HEADER ptmpMsgHeader = (LPSTRUC_MSG_HEADER)pTmpBuffer;
         ptmpMsgHeader->pConn = pConn;
-        ptmpMsgHeader->iCurrsequence = pConn->iCurrsequence; //收到包时的连接池中连接序号记录到消息头里来，以备将来用；
+        ptmpMsgHeader->iCurrsequence = pConn->iCurrsequence; //收到包时的连接池中连接序号记录到消息头里来
         //b)再填写包头内容
-        pTmpBuffer += sizeof(STRUC_MSG_HEADER);                 //往后跳，跳过消息头，指向包头
-        memcpy(pTmpBuffer,pPkgHeader,sizeof(COMM_PKG_HEADER)); //直接把收到的包头拷贝进来
-        if(e_pkgLen == sizeof(COMM_PKG_HEADER))
+        pTmpBuffer += sizeof(STRUC_MSG_HEADER); 
+        memcpy(pTmpBuffer,pPkgHeader,sizeof(COMM_PKG_HEADER));
+        if(e_pkgLen == sizeof(COMM_PKG_HEADER)) //该报文只有包头无包体
         {
-            //该报文只有包头无包体
-            //这相当于收完整了，则直接入消息队列待后续业务逻辑线程去处理吧
             if(m_floodAkEnable == 1) 
             {
                 isflood = TestFlood(pConn);
@@ -221,9 +196,9 @@ void CSocket::MessageHandler_p1(lpngx_connection_t pConn,bool &isflood)
         } 
         else
         {
-            pConn->curStat = _PKG_BD_INIT;                   //当前状态发生改变，包头刚好收完，准备接收包体	    
-            pConn->precvbuf = pTmpBuffer + sizeof(COMM_PKG_HEADER);  //pTmpBuffer指向包头，这里 + sizeof(COMM_PKG_HEADER)后指向包体 weizhi
-            pConn->irecvlen = e_pkgLen - sizeof(COMM_PKG_HEADER);    //e_pkgLen是整个包【包头+包体】大小，-sizeof(COMM_PKG_HEADER)【包头】  = 包体
+            pConn->curStat = _PKG_BD_INIT;
+            pConn->precvbuf = pTmpBuffer + sizeof(COMM_PKG_HEADER);
+            pConn->irecvlen = e_pkgLen - sizeof(COMM_PKG_HEADER);
         }                       
     }  //end if(e_pkgLen < sizeof(COMM_PKG_HEADER)) 
 
@@ -240,7 +215,6 @@ void CSocket::MessageHandler_p2(lpngx_connection_t pConn,bool &isflood)
     }
     else
     {
-        //对于有攻击倾向的恶人，先把他的包丢掉
         CMemory *p_memory = CMemory::GetInstance();
         p_memory->FreeMemory(pConn->precvMemPointer); //直接释放掉内存，根本不往消息队列入
     }
@@ -263,22 +237,18 @@ bool CSocket::TestFlood(lpngx_connection_t pConn)
     iCurrTime =  (sCurrTime.tv_sec * 1000 + sCurrTime.tv_usec / 1000);  //毫秒
 	if((iCurrTime - pConn->FloodkickLastTime) < m_floodTimeInterval)   //两次收到包的时间 < 100毫秒
 	{
-        //发包太频繁记录
-		pConn->FloodAttackCount++;
+		pConn->FloodAttackCount++; 
 		pConn->FloodkickLastTime = iCurrTime;
 	}
-	else
+	else //恢复计数值
 	{
-        //既然发布不这么频繁，则恢复计数值
 		pConn->FloodAttackCount = 0;
 		pConn->FloodkickLastTime = iCurrTime;
 	}
 
-	if(pConn->FloodAttackCount >= m_floodKickCount)
-	{
-		//可以踢此人的标志
-		reco = true;
-	}
+	if(pConn->FloodAttackCount >= m_floodKickCount) 
+		reco = true; //可以踢此人的标志
+        
 	return reco;
 }
 
@@ -289,42 +259,26 @@ bool CSocket::TestFlood(lpngx_connection_t pConn)
 //-2，errno != EAGAIN != EWOULDBLOCK != EINTR
 ssize_t CSocket::sendproc(lpngx_connection_t c,char *buff,ssize_t size)  //ssize_t是有符号整型，在32位机器上等同与int，在64位机器上等同与long int，size_t就是无符号型的ssize_t
 {
-    //这里参考借鉴了官方nginx函数ngx_unix_send()的写法
     ssize_t   n;
 
     for ( ;; )
     {
-        n = send(c->fd, buff, size, 0); //send()系统函数， 最后一个参数flag，一般为0； 
-        if(n > 0) //成功发送了一些数据
-        {        
-            //这里有两种情况
-            //(1) n == size也就是想发送多少都发送成功了，这表示完全发完毕了
-            //(2) n < size 没发送完毕，那肯定是发送缓冲区满了，所以也不必要重试发送，直接返回吧
-            return n; //返回本次发送的字节数
-        }
+        n = send(c->fd, buff, size, 0);
 
-        if(n == 0)
-        {
+        if(n > 0)
+            return n;
+        else if(n == 0)
             return 0;
-        }
+            
+        if(errno == EAGAIN)
+            return -1;
 
-        if(errno == EAGAIN)  //这东西应该等于EWOULDBLOCK
-        {
-            //内核缓冲区满，这个不算错误
-            return -1;  //表示发送缓冲区满了
-        }
-
-        if(errno == EINTR) 
-        {
-            //这个应该也不算错误 ，收到某个信号导致send产生这个错误？
-            //参考官方的写法，打印个日志，其他啥也没干，那就是等下次for循环重新send试一次了
-            ngx_log_stderr(errno,"CSocket::sendproc()中send()失败.");  //打印个日志看看啥时候出这个错误          
-        }
+        if(errno == EINTR)
+            ngx_log_stderr(errno,"CSocket::sendproc()中send()失败.");      
         else
-        {
-            return -2;    
-        }
-    } //end for
+            return -2;
+
+    }
 }
 
 //能走到这里，数据就是没法送完毕，要继续发送
@@ -332,7 +286,6 @@ void CSocket::ngx_write_request_handler(lpngx_connection_t pConn)
 {      
     CMemory *p_memory = CMemory::GetInstance();
     
-    //这些代码的书写可以参照 void* CSocket::ServerSendQueueThread(void* threadData)
     ssize_t sendsize = sendproc(pConn,pConn->psendbuf,pConn->isendlen);
 
     if(sendsize > 0 && sendsize != pConn->isendlen)
@@ -350,7 +303,7 @@ void CSocket::ngx_write_request_handler(lpngx_connection_t pConn)
 
     if(sendsize > 0 && sendsize == pConn->isendlen) //成功发送完毕，做个通知是可以的；
     {
-        //如果是成功的发送完毕数据，则把写事件通知从epoll中干掉吧；其他情况，那就是断线了，等着系统内核把连接从红黑树中干掉即可；
+        //如果成功发送完毕数据，则把写事件通知从epoll中移除；其他情况就是断线，等着系统内核把连接从红黑树中删除即可；
         if(ngx_epoll_oper_event(
                 pConn->fd,          //socket句柄
                 EPOLL_CTL_MOD,      //事件类型，这里是修改
@@ -359,21 +312,16 @@ void CSocket::ngx_write_request_handler(lpngx_connection_t pConn)
                 pConn               //连接池中的连接
                 ) == -1)
         {
-            //有这情况发生？这可比较麻烦，不过先do nothing
             ngx_log_stderr(errno,"CSocket::ngx_write_request_handler()中ngx_epoll_oper_event()失败。");
         }    
-
-        //ngx_log_stderr(0,"CSocket::ngx_write_request_handler()中数据发送完毕，很好。"); //做个提示吧，商用时可以干掉
-        
     }
 
     //能走下来的，要么数据发送完毕了，要么对端断开了，那么执行收尾工作吧；
 
-    p_memory->FreeMemory(pConn->psendMemPointer);  //释放内存
+    p_memory->FreeMemory(pConn->psendMemPointer);
     pConn->psendMemPointer = NULL;        
-    --pConn->iThrowsendCount;  //建议放在最后执行
+    --pConn->iThrowsendCount;
 
-    //数据发送完毕，或者把需要发送的数据干掉，都说明发送缓冲区可能有地方了，让发送线程往下走判断能否发送新数据
     if(sem_post(&m_semEventSendQueue)==-1)       
         ngx_log_stderr(0,"CSocket::ngx_write_request_handler()中sem_post(&m_semEventSendQueue)失败.");
     return;

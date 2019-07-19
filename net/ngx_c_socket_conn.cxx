@@ -71,7 +71,7 @@ void CSocket::InitConnPool()
         p_Conn->Recondition();
         m_connectionList.push_back(p_Conn);     //所有连接【不管是否空闲】都放在这个list
         m_freeconnectionList.push_back(p_Conn); //空闲连接会放在这个list
-    } //end for
+    }
     m_free_connection_n = m_total_connection_n = m_connectionList.size(); //开始这两个列表一样大
     return;
 }
@@ -112,16 +112,15 @@ lpngx_connection_t CSocket::ngx_get_connection(int isock)
     lpngx_connection_t p_Conn = (lpngx_connection_t)p_memory->AllocMemory(sizeof(ngx_connection_t),true);
     p_Conn = new(p_Conn) ngx_connection_t();
     p_Conn->Recondition();
-    m_connectionList.push_back(p_Conn); //入到总表中来，但不能入到空闲表中来，因为凡是调这个函数的，肯定是要用这个连接的
+    m_connectionList.push_back(p_Conn); //插入到总链表中来，但不能插入到空闲链表中
     ++m_total_connection_n;             
     p_Conn->fd = isock;
     return p_Conn;
 }
 
-//将连接还给连接池
+//将连接还给连接池【立即回收】
 void CSocket::ngx_free_connection(lpngx_connection_t pConn) 
 {
-    //因为有线程可能要动连接池中连接，所以在合理互斥也是必要的
     CLock lock(&m_connectionMutex);  
 
     ++pConn->iCurrsequence;
@@ -138,33 +137,31 @@ void CSocket::ngx_free_connection(lpngx_connection_t pConn)
     }
     pConn->iThrowsendCount = 0;
 
-    //扔到空闲连接列表里
     m_freeconnectionList.push_back(pConn);
 
-    //空闲连接数+1
     ++m_free_connection_n;
     return;
 }
 
 
-//将连接放入回收队列(交付给回收线程处理)
+//将连接放入回收队列(交付给回收线程处理)【延迟回收】
 void CSocket::inRecyConnectQueue(lpngx_connection_t pConn)
 {
     std::list<lpngx_connection_t>::iterator pos;
     bool ifFind = false;
-        
-    CLock lock(&m_recyconnqueueMutex); //针对连接回收列表的互斥量，因为线程ServerRecyConnectionThread()也有要用到这个回收列表；
+    //针对连接回收队列的互斥量，因为线程ServerRecyConnectionThread()也有要用到这个回收队列
+    CLock lock(&m_recyconnqueueMutex); 
 
     //看一下该连接是否已存在于回收队列中
     for(pos = m_recyconnectionList.begin(); pos != m_recyconnectionList.end(); ++pos)
 	{
 		if((*pos) == pConn)		
 		{
-			ifFind = true; //已经有了，直接返回，不用管了
+			ifFind = true;
 			return;
 		}
 	}
-    //走到这，说明回收队列中没有该连接
+
     pConn->inRecyTime = time(NULL);        //记录回收时间
     ++pConn->iCurrsequence;
     m_recyconnectionList.push_back(pConn); //等待ServerRecyConnectionThread线程自会处理 
@@ -186,8 +183,7 @@ void* CSocket::ServerRecyConnectionThread(void* threadData)
     
     while(1)
     {
-        //每次休息500毫秒(单位是微妙,又因为1毫秒=1000微妙，所以 500 *1000 = 500毫秒)
-        usleep(500 * 1000);
+        usleep(500 * 1000); //每次休息500毫秒(单位是微妙,又因为1毫秒=1000微妙，所以 500 *1000 = 500毫秒)
 
         if(pSocketObj->m_totol_recyconnection_n > 0)
         {
@@ -211,9 +207,8 @@ lblRRTD:
                 //到释放的时间
                 //凡是到释放时间的，iThrowsendCount都应该为0；这里再判断一下
                 if(p_Conn->iThrowsendCount > 0)
-                {
                     ngx_log_stderr(0,"CSocket::ServerRecyConnectionThread()中到释放时间却发现p_Conn.iThrowsendCount!=0，这个不该发生");
-                }
+                
 
                 //流程走到这里，表示可以释放
                 --pSocketObj->m_totol_recyconnection_n;        //待释放连接队列大小-1
@@ -221,10 +216,10 @@ lblRRTD:
 
                 pSocketObj->ngx_free_connection(p_Conn);	   //归还参数pConn所代表的连接到到连接池中
                 goto lblRRTD; 
-            } //end for
+            }
             err = pthread_mutex_unlock(&pSocketObj->m_recyconnqueueMutex); 
             if(err != 0)  ngx_log_stderr(err,"CSocket::ServerRecyConnectionThread()pthread_mutex_unlock()失败，返回的错误码为%d!",err);
-        } //end if
+        } //end if(pSocketObj->m_totol_recyconnection_n > 0)
 
         if(g_stopEvent == 1) //要退出整个程序，那么肯定要先退出这个循环
         {
@@ -244,13 +239,13 @@ lblRRTD:
                     pSocketObj->m_recyconnectionList.erase(pos);   //迭代器已经失效，但pos所指内容在p_Conn里保存着呢
                     pSocketObj->ngx_free_connection(p_Conn);	   //归还参数pConn所代表的连接到到连接池中
                     goto lblRRTD2; 
-                } //end for
+                }
                 err = pthread_mutex_unlock(&pSocketObj->m_recyconnqueueMutex); 
                 if(err != 0)  ngx_log_stderr(err,"CSocket::ServerRecyConnectionThread()pthread_mutex_unlock2()失败，返回的错误码为%d!",err);
-            } //end if
+            }
             break; //整个程序要退出了，所以break;
-        }  //end if
-    } //end while    
+        }
+    } //end while(1) 
     
     return (void*)0;
 }

@@ -25,7 +25,7 @@ CConfig::~CConfig()
 	for(pos = m_ConfigItemList.begin(); pos != m_ConfigItemList.end(); ++pos)
 	{		
 		delete (*pos);
-	}//end for
+	}
 	m_ConfigItemList.clear(); 
     return;
 }
@@ -69,7 +69,7 @@ bool CConfig::Load(const char *pconfName)
         if(*linebuf=='[') //[开头的也不处理
 			continue;
 
-        //这种 “ListenPort = 5678”走下来；
+        //语法满足要求的语句才会执行至此处
         char *ptmp = strchr(linebuf,'=');
         if(ptmp != NULL)
         {
@@ -82,17 +82,16 @@ bool CConfig::Load(const char *pconfName)
 			Ltrim(p_confitem->ItemName);
 			Rtrim(p_confitem->ItemContent);
 			Ltrim(p_confitem->ItemContent);
-
-            //printf("itemname=%s | itemcontent=%s\n",p_confitem->ItemName,p_confitem->ItemContent);            
-            m_ConfigItemList.push_back(p_confitem);  //内存要释放，因为这里是new出来的 
-        } //end if
+        
+            m_ConfigItemList.push_back(p_confitem);  //在m_ConfigItemList的析构函数中统一释放
+        }
     } //end while(!feof(fp)) 
 
-    fclose(fp); //这步不可忘记
+    fclose(fp);
     return true;
 }
 
-//根据ItemName获取配置信息字符串，不修改不用互斥
+//根据ItemName获取配置信息字符串
 const char *CConfig::GetString(const char *p_itemname)
 {
 	std::vector<LPCConfItem>::iterator pos;	
@@ -100,10 +99,10 @@ const char *CConfig::GetString(const char *p_itemname)
 	{	
 		if(strcasecmp( (*pos)->ItemName,p_itemname) == 0)
 			return (*pos)->ItemContent;
-	}//end for
+	}
 	return NULL;
 }
-//根据ItemName获取数字类型配置信息，不修改不用互斥
+//根据ItemName获取数字类型配置信息
 int CConfig::GetIntDefault(const char *p_itemname,const int def)
 {
 	std::vector<LPCConfItem>::iterator pos;	
@@ -111,7 +110,7 @@ int CConfig::GetIntDefault(const char *p_itemname,const int def)
 	{	
 		if(strcasecmp( (*pos)->ItemName,p_itemname) == 0)
 			return atoi((*pos)->ItemContent);
-	}//end for
+	}
 	return def;
 }
 

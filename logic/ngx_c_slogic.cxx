@@ -55,9 +55,6 @@ CLogicSocket::~CLogicSocket() {}
 bool CLogicSocket::Initialize()
 {     
     bool bParentInit = CSocket::Initialize();  //调用父类的同名函数
-    /* * * * * * *
-        扩展区
-    *  * * * * * */
     return bParentInit;
 }
 
@@ -66,12 +63,12 @@ bool CLogicSocket::Initialize()
 //pMsgBuf：消息头 + 包头 + 包体 ：自解释；
 void CLogicSocket::threadRecvProcFunc(char *pMsgBuf)
 {
-    LPSTRUC_MSG_HEADER pMsgHeader = (LPSTRUC_MSG_HEADER)pMsgBuf;                  //消息头
-    LPCOMM_PKG_HEADER  pPkgHeader = (LPCOMM_PKG_HEADER)(pMsgBuf+sizeof(STRUC_MSG_HEADER)); //包头
-    unsigned short pkglen = ntohs(pPkgHeader->pkgLen);                            //获取客户端声称的包大小【包头+包体】
-    void  *pPkgBody;  //指向包体的指针
+    LPSTRUC_MSG_HEADER pMsgHeader = (LPSTRUC_MSG_HEADER)pMsgBuf;
+    LPCOMM_PKG_HEADER  pPkgHeader = (LPCOMM_PKG_HEADER)(pMsgBuf+sizeof(STRUC_MSG_HEADER));
+    unsigned short pkglen = ntohs(pPkgHeader->pkgLen);
+    void  *pPkgBody;
 
-    if(pkglen == sizeof(COMM_PKG_HEADER)) //没有包体，只有包头
+    if(pkglen == sizeof(COMM_PKG_HEADER))
     {
 		if(pPkgHeader->crc32 != 0) //只有包头的crc应该为0，若不为0说明该包异常，应当丢弃
 			return;
@@ -96,7 +93,7 @@ void CLogicSocket::threadRecvProcFunc(char *pMsgBuf)
     lpngx_connection_t p_Conn = pMsgHeader->pConn;        //消息头中藏着指向连接池中连接的指针
 
 
-    //(1)判断包是否过期。如果从收到客户端发来的包，到线程获取到该包的过程中，客户端断开。那这个连接的包就直接无视    。
+    //(1)判断包是否过期
     if(p_Conn->iCurrsequence != pMsgHeader->iCurrsequence)
         return; 
 
@@ -104,14 +101,14 @@ void CLogicSocket::threadRecvProcFunc(char *pMsgBuf)
 	if(imsgCode >= CMD_COUNT) //无符号数不可能<0
     {
         ngx_log_stderr(0,"CLogicSocket::threadRecvProcFunc()中imsgCode=%d消息码不对!",imsgCode);
-        return; //无视该包
+        return;
     }
 
     //(3)有对应的消息处理函数吗
     if(statusHandler[imsgCode] == NULL)
     {
         ngx_log_stderr(0,"CLogicSocket::threadRecvProcFunc()中imsgCode=%d消息码找不到对应的处理函数!",imsgCode); //这种有恶意倾向或者错误倾向的包，希望打印出来看看是谁干的
-        return;  //没有相关的处理函数
+        return;
     }
 
     //(4)一切正确，调用消息码对应的成员函数来处理
@@ -125,24 +122,25 @@ void CLogicSocket::procPingTimeOutChecking(LPSTRUC_MSG_HEADER tmpmsg,time_t cur_
     CMemory *p_memory = CMemory::GetInstance();
     lpngx_connection_t p_Conn = tmpmsg->pConn;
 
-    if(tmpmsg->iCurrsequence == p_Conn->iCurrsequence) //该数据包有效
+    if(tmpmsg->iCurrsequence == p_Conn->iCurrsequence)
     {
         if(m_ifTimeOutKick == 1)
         {
-            zdClosesocketProc(p_Conn);  //到时间直接踢出去的需求
+            zdClosesocketProc(p_Conn);
         }            
         else if( (cur_time - p_Conn->lastPingTime ) > (m_iWaitTime*3+10) ) //超时踢的判断标准就是 每次检查的时间间隔*3
         {          
             zdClosesocketProc(p_Conn); 
         }   
-        p_memory->FreeMemory(tmpmsg); //内存要释放
+        p_memory->FreeMemory(tmpmsg);
     }
-    else //此连接断了
+    else
     {
         p_memory->FreeMemory(tmpmsg);
     }
     return;
 }
+
 
 //发送没有包体的数据包给客户端
 void CLogicSocket::SendNoBodyPkgToClient(LPSTRUC_MSG_HEADER pMsgHeader,unsigned short iMsgCode)
@@ -155,7 +153,7 @@ void CLogicSocket::SendNoBodyPkgToClient(LPSTRUC_MSG_HEADER pMsgHeader,unsigned 
 	memcpy(p_tmpbuf,pMsgHeader,sizeof(STRUC_MSG_HEADER));
 	p_tmpbuf += sizeof(STRUC_MSG_HEADER);
 
-    LPCOMM_PKG_HEADER pPkgHeader = (LPCOMM_PKG_HEADER)p_tmpbuf;	  //指向的是要发送的包的包头	
+    LPCOMM_PKG_HEADER pPkgHeader = (LPCOMM_PKG_HEADER)p_tmpbuf;
     pPkgHeader->msgCode = htons(iMsgCode);	
     pPkgHeader->pkgLen = htons(sizeof(COMM_PKG_HEADER)); 
 	pPkgHeader->crc32 = 0;		
@@ -167,7 +165,6 @@ void CLogicSocket::SendNoBodyPkgToClient(LPSTRUC_MSG_HEADER pMsgHeader,unsigned 
  *
  *          处理各种业务逻辑
  * ____________________________________*/
-
 bool CLogicSocket::_HandleRegister(lpngx_connection_t pConn,
                                 LPSTRUC_MSG_HEADER pMsgHeader,
                                 char *pPkgBody,
@@ -178,12 +175,12 @@ bool CLogicSocket::_HandleRegister(lpngx_connection_t pConn,
     if(iBodyLength != sizeof(STRUCT_REGISTER)) return false; 
 
     //(2)对于同一个用户，可能同时发送来多个请求过来，造成多个线程同时为该用户服务
-    CLock lock(&pConn->logicPorcMutex); //凡是和本用户有关的访问都互斥
+    CLock lock(&pConn->logicPorcMutex); 
     
     //(3)取得了整个发送过来的数据
     LPSTRUCT_REGISTER p_RecvInfo = (LPSTRUCT_REGISTER)pPkgBody;
     p_RecvInfo->iType = ntohl(p_RecvInfo->iType);
-    //以下两行非常关键，目的是防止客户端发来未带'\0'的畸形包，导致服务器非法访问自身内存。 
+    //以下两行非常关键，目的是防止客户端发来未带'\0'的畸形包，导致服务器非法访问自身内存。
     p_RecvInfo->username[sizeof(p_RecvInfo->username)-1]=0;
     p_RecvInfo->password[sizeof(p_RecvInfo->password)-1]=0; 
 

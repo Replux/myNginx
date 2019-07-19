@@ -12,9 +12,9 @@
 #include "ngx_c_conf.h"
 
 //函数声明
-static void ngx_start_worker_processes(int threadnums);
-static int  ngx_spawn_process(int threadnums,const char *pprocname);
-static void ngx_worker_process_cycle(int inum,const char *pprocname);
+static void start_worker_processes(int threadnums);
+static int  spawn_process(int threadnums,const char *pprocname);
+static void worker_process_cycle(int inum,const char *pprocname);
 static void ngx_worker_process_init(int inum);
 
 //变量声明
@@ -41,8 +41,9 @@ void ngx_master_process_cycle()
     if (sigprocmask(SIG_BLOCK, &set, NULL) == -1) 
     {        
         ngx_log_error_core(NGX_LOG_ALERT,errno,"【ngx_master_process_cycle.cxx】sigprocmask()失败");
+        //即便sigprocmask失败，也要继续走下去
     }
-    //即便sigprocmask失败，也要继续走下去
+    
 
     //首先设置主进程标题
     size_t size;
@@ -54,18 +55,17 @@ void ngx_master_process_cycle()
         char title[1000] = {0};
         strcpy(title,(const char *)masterTitle); //"master process"
         strcat(title," ");  //跟一个空格分开一些，清晰    //"master process "
+
         for (i = 0; i < g_argc; i++)         //"master process ./nginx"
-        {
             strcat(title,g_argv[i]);
-        }//end for
+
         ngx_setproctitle(title); //设置标题
         ngx_log_error_core(NGX_LOG_NOTICE,0,"%s %p 【master进程】启动并开始运行......!",title,ngx_pid); //设置标题时顺便记录下来进程名，进程id等信息到日志
     }    
-        
-    //从配置文件中读取要创建的worker进程数量
-    CConfig *p_config = CConfig::GetInstance(); //单例类
-    int workprocess = p_config->GetIntDefault("WorkerProcesses",1); //从配置文件中得到要创建的worker进程数量
-    ngx_start_worker_processes(workprocess);  //这里创建worker子进程
+    
+    CConfig *p_config = CConfig::GetInstance();
+    int workprocess = p_config->GetIntDefault("WorkerProcesses",1); //从配置文件中读取要创建的worker进程数量
+    start_worker_processes(workprocess);  //创建worker子进程
 
     //创建子进程后，父进程的执行流程会返回到这里，子进程不会走到这  
     sigemptyset(&set); //取消信号屏蔽
@@ -77,10 +77,10 @@ void ngx_master_process_cycle()
 
         //sigsuspend是原子操作，包含4步：
         //a)根据给定的参数设置新的mask【空集】并阻塞当前进程
-        //b)一旦收到信号A，便恢复原先的信号屏蔽【即函数刚开始设置的屏蔽10个信号，从而保证下面的流程不会再次被其他信号截断】
+        //b)一旦收到信号A，便恢复原先的信号屏蔽【即之前设置的屏蔽10个信号，从而保证下面的流程不会再次被其他信号截断】
         //c)调用信号A对应的信号处理函数
         //d)信号处理函数返回后，sigsuspend返回，使程序流程继续往下走
-        sigsuspend(&set);  //此时master依赖于信号驱动   
+        sigsuspend(&set);  //master挂起（不占用CPU时间），依赖于信号驱动
         
         sleep(1); 
     }
@@ -89,10 +89,10 @@ void ngx_master_process_cycle()
 
 //描述：根据给定的参数创建指定数量的子进程，因为以后可能要扩展功能，增加参数，所以单独写成一个函数
 //threadnums:要创建的子进程数量
-static void ngx_start_worker_processes(int threadnums)
+static void start_worker_processes(int threadnums)
 {
     for (int i = 0; i < threadnums; i++)  //master进程在走这个循环，来创建若干个子进程
-        ngx_spawn_process(i,"worker process");
+        spawn_process(i,"worker process");
 
     return;
 }
@@ -100,19 +100,19 @@ static void ngx_start_worker_processes(int threadnums)
 //描述：产生一个子进程
 //inum：进程编号【0开始】
 //pprocname：子进程名字"worker process"
-static int ngx_spawn_process(int inum,const char *pprocname)
+static int spawn_process(int inum,const char *pprocname)
 {
-    pid_t  pid = fork(); //fork()系统调用产生子进程
-    switch (pid)  //pid判断父子进程，分支处理
+    pid_t  pid = fork();
+    switch (pid)
     {  
     case -1: //产生子进程失败
-        ngx_log_error_core(NGX_LOG_ALERT,errno,"ngx_spawn_process()fork()产生子进程num=%d,procname=\"%s\"失败!",inum,pprocname);
+        ngx_log_error_core(NGX_LOG_ALERT,errno,"spawn_process()fork()产生子进程num=%d,procname=\"%s\"失败!",inum,pprocname);
         return -1;
 
     case 0:  //子进程分支
-        ngx_parent = ngx_pid;              //因为是子进程了，所有原来的pid变成了父pid
-        ngx_pid = getpid();                //重新获取pid,即本子进程的pid
-        ngx_worker_process_cycle(inum,pprocname);    //所有worker子进程在该函数中循环工作
+        ngx_parent = ngx_pid;                        //因为是子进程了，所有原来的pid变成了父pid
+        ngx_pid = getpid();                          //重新获取pid,即本子进程的pid
+        worker_process_cycle(inum,pprocname);    //所有worker子进程在该函数中循环工作
         break;
 
     default: //父进程分支         
@@ -124,7 +124,7 @@ static int ngx_spawn_process(int inum,const char *pprocname)
 
 //描述：worker子进程的功能函数，无限循环【处理网络事件和定时器事件以对外提供服务】
 //inum：进程编号【0开始】
-static void ngx_worker_process_cycle(int inum,const char *pprocname) 
+static void worker_process_cycle(int inum,const char *pprocname) 
 {
     //设置一下变量
     ngx_process = PROCESS_WORKER;  //设置进程的类型，是worker进程
@@ -136,7 +136,7 @@ static void ngx_worker_process_cycle(int inum,const char *pprocname)
 
     for(;;)
     {
-        ngx_process_events_and_timers(); //处理网络事件和定时器事件
+        process_events_and_timers(); //处理网络事件和定时器事件
     } 
 
     //如果从这个循环跳出来

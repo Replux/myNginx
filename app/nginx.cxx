@@ -17,7 +17,7 @@
 #include "ngx_c_crc32.h"       //和crc32校验算法有关 
 #include "ngx_c_slogic.h"      //和socket通讯相关
 
-//本文件用的函数声明
+//本文件内使用
 static void freeresource();
 
 //和设置标题有关的全局量
@@ -41,7 +41,10 @@ int     g_stopEvent;            //标志程序退出,0不退出1，退出
 sig_atomic_t  ngx_reap;         //标记子进程状态变化[一般是子进程发来SIGCHLD信号表示退出],sig_atomic_t:系统定义的类型：访问或改变这些变量需要在计算机的一条指令内完成
                                    //一般等价于int【通常情况下，int类型的变量通常是原子访问的，也可以认为 sig_atomic_t就是int类型的数据】                                   
 
-//程序主入口函数----------------------------------
+
+/* * * * * * * * * * * * * * * * * * * * *
+ * * * * * * * 程序主入口函数 * * * * * * * 
+ * * * * * * * * * * * * * * * * * * * * */
 int main(int argc, char *const *argv)
 {     
     int exitcode = 0;           //退出代码，先给0表示正常退出
@@ -75,7 +78,7 @@ int main(int argc, char *const *argv)
     CConfig *p_config = CConfig::GetInstance(); //单例类
     if(p_config->Load("nginx.conf") == false) //把配置文件内容载入到内存            
     {   
-        ngx_log_init();    //初始化日志
+        ngx_log_init();    //初始化日志（日志一定要先初始化，后面程序出异常时才能正确的记录）
         ngx_log_stderr(0,"配置文件[%s]载入失败，程序退出","nginx.conf");
         exitcode = 2;
         goto lblexit;

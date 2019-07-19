@@ -11,7 +11,7 @@
 //一些全局变量的外部声明也放在这里
 
 
-//结构定义
+//配置项的结构
 typedef struct _CConfItem
 {
 	char ItemName[50];

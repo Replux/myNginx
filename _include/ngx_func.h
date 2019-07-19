@@ -22,7 +22,7 @@ u_char *ngx_vslprintf(u_char *buf, u_char *last,const char *fmt,va_list args);
 int    ngx_init_signals();
 void   ngx_master_process_cycle();
 int    ngx_daemon();
-void   ngx_process_events_and_timers();
+void   process_events_and_timers();
 
 
 #endif  

@@ -12,7 +12,6 @@
 //只用于本文件的一些函数声明就放在本文件中
 static u_char *ngx_sprintf_num(u_char *buf, u_char *last, uint64_t ui64,u_char zero, uintptr_t hexadecimal, uintptr_t width);
 
-//----------------------------------------------------------------------------------------------------------------------
 //该函数只不过相当于针对ngx_vslprintf()函数包装了一下，所以，直接研究ngx_vslprintf()即可
 u_char *ngx_slprintf(u_char *buf, u_char *last, const char *fmt, ...) 
 {
@@ -25,7 +24,6 @@ u_char *ngx_slprintf(u_char *buf, u_char *last, const char *fmt, ...)
     return p;
 }
 
-//----------------------------------------------------------------------------------------------------------------------
 //和上边的ngx_snprintf非常类似
 u_char * ngx_snprintf(u_char *buf, size_t max, const char *fmt, ...)   //类printf()格式化函数，比较安全，max指明了缓冲区结束位置
 {
@@ -38,16 +36,11 @@ u_char * ngx_snprintf(u_char *buf, size_t max, const char *fmt, ...)   //类prin
     return p;
 }
 
-//----------------------------------------------------------------------------------------------------------------------
-
-//例如，给进来一个 "abc = %d",13   ,最终buf里得到的应该是   abc=13 这种结果
-//buf：往这里放数据
-//last：放的数据不要超过这里
+//例如，传入"abc = %d",13
+//最终buf里得到的应该是abc=13
+//last：放的数据不要超过该地址
 //fmt：以这个为首的一系列可变参数
-//支持的格式： %d【%Xd/%xd】:数字,    %s:字符串      %f：浮点,  %P：pid_t
-    //对于：ngx_log_stderr(0, "invalid option: \"%s\",%d", "testinfo",123);
-       //fmt = "invalid option: \"%s\",%d"
-       //args = "testinfo",123
+//支持的格式： %d【%Xd/%xd】:数字,  %s:字符串   %f：浮点,  %P：pid_t
 u_char *ngx_vslprintf(u_char *buf, u_char *last,const char *fmt,va_list args)
 {
     u_char     zero;
@@ -70,38 +63,27 @@ u_char *ngx_vslprintf(u_char *buf, u_char *last,const char *fmt,va_list args)
 
     while (*fmt && buf < last) //每次处理一个字符，处理的是  "invalid option: \"%s\",%d" 中的字符
     {
-        if (*fmt == '%')  //%开头的一般都是需要被可变参数 取代的 
+        if (*fmt == '%')
         {
-            //-----------------变量初始化工作开始-----------------
-            //++fmt是先加后用，也就是fmt先往后走一个字节位置，然后再判断该位置的内容
-            zero  = (u_char) ((*++fmt == '0') ? '0' : ' ');  //判断%后边接的是否是个'0'
-                                                                
-            width = 0;                                       //格式字符% 后边如果是个数字，这个数字最终会弄到width里边来 ,这东西目前只对数字格式有效，比如%d,%f这种
+            zero  = (u_char) ((*++fmt == '0') ? '0' : ' ');  //判断%后边接的是否是个'0'                   
+            width = 0;                                       //格式字符% 后边如果是个数字，这个数字最终会弄到width里边来 ,目前只对数字格式有效
             sign  = 1;                                       //显示的是否是有符号数
             hex   = 0;                                       //是否以16进制形式显示(比如显示一些地址)，0：不是，1：是，并以小写字母显示a-f，2：是，并以大写字母显示A-F
-            frac_width = 0;                                  //小数点后位数字，一般需要和%.10f配合使用，这里10就是frac_width；
+            frac_width = 0;                                  //小数点后位数字，一般需要和%.10f配合使用
             i64 = 0;                                         //一般用%d对应的可变参中的实际数字，会保存在这里
             ui64 = 0;                                        //一般用%ud对应的可变参中的实际数字，会保存在这里    
-            
-            //-----------------变量初始化工作结束-----------------
 
-            //这个while就是判断%后边是否是个数字，如果是个数字，就把这个数字取出来，比如%16，最终这个循环就能够把16取出来弄到width里边去
-            //%16d 这里最终width = 16;
-            while (*fmt >= '0' && *fmt <= '9')  //如果%后边接的字符是 '0' --'9'之间的内容   ，比如  %16这种；   
-            {
-                //第一次 ：width = 1;  第二次 width = 16，所以整个width = 16；
+            while (*fmt >= '0' && *fmt <= '9')   
                 width = width * 10 + (*fmt++ - '0');
-            }
 
             for ( ;; )
             {
-                switch (*fmt)  //处理一些%之后的特殊字符
+                switch (*fmt)   //处理一些%之后的特殊字符
                 {
                 case 'u':       //%u，这个u表示无符号
                     sign = 0;   //标记这是个无符号数
                     fmt++;      //往后走一个字符
-                    continue;   //回到for继续判断
-
+                    continue;
                 case 'X':       //%X，X表示十六进制，并且十六进制中的A-F以大写字母显示，不要单独使用，一般是%Xd
                     hex = 2;    //标记以大写字母显示十六进制中的A-F
                     sign = 0;
@@ -115,10 +97,10 @@ u_char *ngx_vslprintf(u_char *buf, u_char *last,const char *fmt,va_list args)
 
                 case '.':       //其后边必须跟个数字，必须与%f配合使用，形如 %.10f：表示转换浮点数时小数部分的位数，比如%.10f表示转换浮点数时，小数点后必须保证10位数字，不足10位则用0来填补；
                     fmt++;      //往后走一个字符，后边这个字符肯定是0-9之间，因为%.要求接个数字先 
-                    while(*fmt >= '0' && *fmt <= '9')  //如果是数字，一直循环，这个循环最终就能把诸如%.10f中的10提取出来
+                    while(*fmt >= '0' && *fmt <= '9') 
                     {
                         frac_width = frac_width * 10 + (*fmt++ - '0'); 
-                    } //end while(*fmt >= '0' && *fmt <= '9') 
+                    }
                     break;
 
                 default:
@@ -129,7 +111,7 @@ u_char *ngx_vslprintf(u_char *buf, u_char *last,const char *fmt,va_list args)
 
             switch (*fmt) 
             {
-            case '%': //只有%%时才会遇到这个情形，本意是打印一个%，所以
+            case '%': //只有%%时才会遇到这个情形，本意是打印一个%
                 *buf++ = '%';
                 fmt++;
                 continue;
@@ -143,7 +125,7 @@ u_char *ngx_vslprintf(u_char *buf, u_char *last,const char *fmt,va_list args)
                 {
                     ui64 = (uint64_t) va_arg(args, u_int);    
                 }
-                break;  //这break掉，直接跳道switch后边的代码去执行,这种凡是break的，都不做fmt++;  *********************【switch后仍旧需要进一步处理】
+                break;  //这break掉，直接跳道switch后边的代码去执行,这种凡是break的，都不做fmt++; 
 
              case 'i': //转换ngx_int_t型数据，如果用%ui，则转换的数据类型是ngx_uint_t  
                 if (sign) 
@@ -154,11 +136,6 @@ u_char *ngx_vslprintf(u_char *buf, u_char *last,const char *fmt,va_list args)
                 {
                     ui64 = (uint64_t) va_arg(args, uintptr_t);
                 }
-
-                //if (max_width) 
-                //{
-                //    width = NGX_INT_T_LEN;
-                //}
 
                 break;    
 
@@ -186,25 +163,25 @@ u_char *ngx_vslprintf(u_char *buf, u_char *last,const char *fmt,va_list args)
 
                 while (*p && buf < last)  //没遇到字符串结束标记，并且buf值够装得下这个参数
                 {
-                    *buf++ = *p++;  //那就装，比如  "%s"    ，   "abcdefg"，那abcdefg都被装进来
+                    *buf++ = *p++;
                 }
                 
                 fmt++;
-                continue; //重新从while开始执行 
+                continue;
 
             case 'P':  //转换一个pid_t类型
                 i64 = (int64_t) va_arg(args, pid_t);
                 sign = 1;
                 break;
 
-            case 'f': //一般 用于显示double类型数据，如果要显示小数部分，则要形如 %.5f  
+            case 'f': //一般用于显示double类型数据，如果要显示小数部分，则要形如 %.5f  
                 f = va_arg(args, double);  //va_arg():遍历可变参数，var_arg的第二个参数表示遍历的这个可变的参数的类型
                 if (f < 0)  //负数的处理
                 {
                     *buf++ = '-'; //单独搞个负号出来
                     f = -f; //那这里f应该是正数了!
                 }
-                //走到这里保证f肯定 >= 0【不为负数】
+                //走到这里f肯定>= 0
                 ui64 = (int64_t) f; //正整数部分给到ui64里
                 frac = 0;
 
@@ -214,7 +191,7 @@ u_char *ngx_vslprintf(u_char *buf, u_char *last,const char *fmt,va_list args)
                     scale = 1;  //缩放从1开始
                     for (n = frac_width; n; n--) 
                     {
-                        scale *= 10; //这可能溢出哦
+                        scale *= 10;
                     }
 
                     //把小数部分取出来 ，比如如果是格式    %.2f   ，对应的参数是12.537
@@ -229,7 +206,7 @@ u_char *ngx_vslprintf(u_char *buf, u_char *last,const char *fmt,va_list args)
                         ui64++;    //正整数部分进位
                         frac = 0;  //小数部分归0
                     }
-                } //end if (frac_width)
+                }
 
                 //正整数部分，先显示出来
                 buf = ngx_sprintf_num(buf, last, ui64, zero, 0, width); //把一个数字 比如“1234567”弄到buffer中显示
@@ -245,17 +222,11 @@ u_char *ngx_vslprintf(u_char *buf, u_char *last,const char *fmt,va_list args)
                 fmt++;
                 continue;  //重新从while开始执行
 
-            //..................................
-            //................其他格式符，逐步完善
-            //..................................
-
             default:
                 *buf++ = *fmt++; //往下移动一个字符
                 continue; //注意这里不break，而是continue;而这个continue其实是continue到外层的while去了，也就是流程重新从while开头开始执行;
             } //end switch (*fmt) 
             
-            //显示%d的，会走下来，其他走下来的格式日后逐步完善......
-
             //统一把显示的数字都保存到 ui64 里去；
             if (sign) //显示的是有符号数
             {
@@ -283,7 +254,7 @@ u_char *ngx_vslprintf(u_char *buf, u_char *last,const char *fmt,va_list args)
     return buf;
 }
 
-//----------------------------------------------------------------------------------------------------------------------
+
 //buf：往这里放数据
 //last：放的数据不要超过这里
 //ui64：显示的数字         
@@ -318,7 +289,7 @@ static u_char * ngx_sprintf_num(u_char *buf, u_char *last, uint64_t ui64, u_char
             do 
             {
                 *--p = (u_char) (ui64 % 10 + '0');
-            } while (ui64 /= 10); //每次缩小10倍等于去掉屁股后边这个数字
+            } while (ui64 /= 10);
         }
     }
     else if (hexadecimal == 1)  //如果显示一个十六进制数字，格式符为：%xd，则这个条件成立，要以16进制数字形式显示出来这个十进制数,a-f小写
@@ -328,9 +299,8 @@ static u_char * ngx_sprintf_num(u_char *buf, u_char *last, uint64_t ui64, u_char
             *--p = hex[(uint32_t) (ui64 & 0xf)];    
         } while (ui64 >>= 4);
     } 
-    else // hexadecimal == 2    //如果显示一个十六进制数字，格式符为：%Xd，则这个条件成立，要以16进制数字形式显示出来这个十进制数,A-F大写
+    else // hexadecimal == 2  
     { 
-        //参考else if (hexadecimal == 1)，非常类似
         do 
         { 
             *--p = HEX[(uint32_t) (ui64 & 0xf)];
@@ -342,13 +312,10 @@ static u_char * ngx_sprintf_num(u_char *buf, u_char *last, uint64_t ui64, u_char
     while (len++ < width && buf < last)
     {
         *buf++ = zero;
-                                          //ngx_log_stderr(0, "invalid option: %10d\n", 21); 
-                                          //显示的结果是：nginx: invalid option:         21  ---21前面有8个空格，这8个弄个，就是在这里添加进去的；
     }
     
     len = (temp + NGX_INT64_LEN) - p; //还原这个len，也就是要显示的数字的实际宽度【因为上边这个while循环改变了len的值】
-    //现在还没把实际的数字比如“7654321”往buf里拷贝呢，要准备拷贝
-
+   
     if((buf + len) >= last)   //发现如果往buf里拷贝“7654321”后，会导致buf不够长【剩余的空间不够拷贝整个数字】
     {
         len = last - buf;

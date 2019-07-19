@@ -1,7 +1,8 @@
 # 使用介绍
 1. 在根目录下直接"make"编译项目后会生成名为"nginx"的可执行文件，运行该文件即可。
-2. 可在"nginx.conf"文件下对该程序进行调整。
+2. 可在"nginx.conf"配置文件中对该程序进行调整。
 3. 压力测试的Demo放在"TestServerDemo/MFCApplication4"文件夹下。
+4. 系统的核心类有两个,分别是CSocket和CLogicSocket。CSocket是CLogicSocket的父类，前者提供了本系统的核心功能，后者是对前者在业务逻辑功能上的扩展。因此，如果需要扩展本系统可以继承CSocket类，或者是在CLogicSocket类下编写相关业务逻辑。
 
 # 技术要点
 1. 使用Epoll水平触发的IO多路复用技术，并采用Reactor模式对事件进行处理；
@@ -31,9 +32,10 @@
                                 + ngx_epoll_add_event((*pos)->fd....);
                                     + epoll_ctl(m_epollhandle,eventtype,fd,&ev);
                         + ngx_setproctitle(pprocname);         //重新为子进程设置标题为worker process
-                        + for->ngx_process_events_and_timers(); //处理网络事件和定时器事件 
-                            + g_socket.ngx_epoll_process_events(-1); //-1表示无限时等待
-                                + epoll_wait();
+			+ for(;;)
+                            + ngx_process_events_and_timers(); //处理网络事件和定时器事件 
+                                + g_socket.ngx_epoll_process_events(-1); //-1表示无限时等待
+                                    + epoll_wait();
                         + g_threadpool.StopAll();      //考虑在这里停止线程池；
 		    			+ g_socket.Shutdown_subproc(); //socket需要释放的东西考虑释放；	
         + sigemptyset(&set); 

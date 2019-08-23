@@ -12,6 +12,9 @@
 5. 实现了定时器，用于对客户端进行心跳检测以及限时连接；
 6. 支持配置文件的读取与系统日志打印；
 
+# 系统结构
+![model](https://github.com/Replux/myNginx/blob/master/reactor.png)
+
 # 核心函数调用关系
 + main() //程序入口
     + ngx_master_process_cycle()  //创建子进程等一系列动作
